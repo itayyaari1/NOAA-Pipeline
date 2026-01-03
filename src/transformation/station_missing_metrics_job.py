@@ -1,5 +1,8 @@
 from ..db.trino_client import TrinoClient
 from .watermark import WatermarkStore
+from ..utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 class StationMissingMetricsJob:
     JOB_NAME = "station_missing_metrics"
@@ -19,7 +22,7 @@ class StationMissingMetricsJob:
         max_ts = int(max_ts_rows[0][0]) if max_ts_rows else 0
 
         if max_ts <= last_ts:
-            print("No new data to transform.")
+            logger.info("No new data to transform.")
             return
 
         # Aggregate new records only
@@ -45,7 +48,7 @@ class StationMissingMetricsJob:
         new_rows = self.trino.execute(agg_sql)
         if not new_rows:
             self.watermark.upsert(self.JOB_NAME, max_ts)
-            print("No aggregatable new rows.")
+            logger.info("No aggregatable new rows.")
             return
 
         # Merge strategy (SQL-only):
@@ -55,7 +58,7 @@ class StationMissingMetricsJob:
         self._merge(new_rows)
 
         self.watermark.upsert(self.JOB_NAME, max_ts)
-        print(f"Transformed stations={len(new_rows)} watermark={max_ts}")
+        logger.info(f"Transformed {len(new_rows)} stations")
 
     def _merge(self, new_rows: list[tuple]) -> None:
         # Create staging using VALUES
@@ -66,22 +69,26 @@ class StationMissingMetricsJob:
             station_id VARCHAR,
             total_new BIGINT,
             missing_new BIGINT
-        ) WITH (format='PARQUET')
+        ) WITH (
+            format='PARQUET',
+            location = 's3://iceberg/{self.schema}/station_metrics_staging'
+        )
         """)
 
         self.trino.execute(f"""DELETE FROM {self.schema}.station_metrics_staging""")
         self.trino.execute(f"""INSERT INTO {self.schema}.station_metrics_staging (station_id,total_new,missing_new) VALUES {values}""")
 
         # Rebuild metrics for affected stations
-        self.trino.execute(f"""
-        CREATE TABLE IF NOT EXISTS {self.schema}.station_metrics_updated AS
-        SELECT 1 AS dummy
-        """)
         self.trino.execute(f"""DROP TABLE IF EXISTS {self.schema}.station_metrics_updated""")
 
         # Build updated metrics by joining old metrics + new aggregation
         self.trino.execute(f"""
-        CREATE TABLE {self.schema}.station_metrics_updated AS
+        CREATE TABLE {self.schema}.station_metrics_updated
+        WITH (
+            format='PARQUET',
+            location = 's3://iceberg/{self.schema}/station_metrics_updated'
+        )
+        AS
         WITH old AS (
             SELECT station_id, total_observations, missing_observations
             FROM {self.schema}.{self.metrics_table}

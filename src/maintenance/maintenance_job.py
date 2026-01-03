@@ -1,4 +1,7 @@
 from ..db.trino_client import TrinoClient
+from ..utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 class IcebergMaintenanceJob:
     def __init__(self, trino: TrinoClient, schema: str, raw_table: str):
@@ -14,25 +17,24 @@ class IcebergMaintenanceJob:
             self.trino.execute(f"""
             CALL system.expire_snapshots('{fqtn}', retention_threshold => INTERVAL '1' DAY)
             """)
-        except Exception as e:
-            print(f"expire_snapshots not supported or failed: {e}")
+        except Exception:
+            logger.debug("expire_snapshots not supported in this Trino version")
 
         # 2) Remove orphan files
         try:
             self.trino.execute(f"""
             CALL system.remove_orphan_files('{fqtn}', retention_threshold => INTERVAL '1' DAY)
             """)
-        except Exception as e:
-            print(f"remove_orphan_files not supported or failed: {e}")
+        except Exception:
+            logger.debug("remove_orphan_files not supported in this Trino version")
 
         # 3) Optional: rewrite data files (compaction)
-        # If not supported in your Trino version, comment out.
         try:
             self.trino.execute(f"""
             CALL system.rewrite_data_files('{fqtn}')
             """)
-        except Exception as e:
-            print(f"rewrite_data_files not supported or failed: {e}")
+        except Exception:
+            logger.debug("rewrite_data_files not supported in this Trino version")
 
-        print("Maintenance completed.")
+        logger.info("Maintenance completed")
 

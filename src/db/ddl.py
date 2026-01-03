@@ -9,11 +9,12 @@ def create_raw_table(schema: str, table: str) -> str:
         value BIGINT,
         event_time_ms BIGINT,
         attributes ARRAY(VARCHAR),
-        source_record JSON,
+        source_record VARCHAR,
         ingestion_ts BIGINT
     )
     WITH (
-        format = 'PARQUET'
+        format = 'PARQUET',
+        location = 's3://iceberg/{schema}/{table}'
     )
     """
 
@@ -26,7 +27,10 @@ def create_metrics_table(schema: str, table: str) -> str:
         missing_percentage DOUBLE,
         last_updated_ts BIGINT
     )
-    WITH (format='PARQUET')
+    WITH (
+        format='PARQUET',
+        location = 's3://iceberg/{schema}/{table}'
+    )
     """
 
 def create_watermark_table(schema: str, table: str) -> str:
@@ -36,6 +40,9 @@ def create_watermark_table(schema: str, table: str) -> str:
         last_processed_ingestion_ts BIGINT,
         updated_ts BIGINT
     )
-    WITH (format='PARQUET')
+    WITH (
+        format='PARQUET',
+        location = 's3://iceberg/{schema}/{table}'
+    )
     """
 

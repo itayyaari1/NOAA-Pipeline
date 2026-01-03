@@ -12,45 +12,62 @@ from src.transformation.station_missing_metrics_job import StationMissingMetrics
 
 from src.maintenance.maintenance_job import IcebergMaintenanceJob
 
+from src.utils.logging import setup_logging, get_logger
+
+setup_logging()
+logger = get_logger(__name__)
+
 def init():
+    logger.info("STEP 1: Initializing Datalake Schema")
     s = Settings()
     trino = TrinoClient(s.trino_host, s.trino_port, s.trino_user, s.trino_catalog, s.trino_schema)
+    
     trino.execute(ddl.create_schema(s.trino_schema))
     trino.execute(ddl.create_raw_table(s.trino_schema, s.raw_table))
     trino.execute(ddl.create_metrics_table(s.trino_schema, s.metrics_table))
     trino.execute(ddl.create_watermark_table(s.trino_schema, s.watermark_table))
+    logger.info("✓ Initialization complete")
 
 def ingest():
+    logger.info("STEP 2: Ingestion Pipeline")
     s = Settings()
     trino = TrinoClient(s.trino_host, s.trino_port, s.trino_user, s.trino_catalog, s.trino_schema)
-
     noaa = NOAAClient(s.noaa_base_url, s.noaa_token, timeout_s=s.request_timeout_s)
     normalizer = DataNormalizer()
     validator = DataValidator()
 
     job = IngestJob(noaa, normalizer, validator, trino, s.trino_schema, s.raw_table)
     job.run(s.dataset_id, s.start_date, s.end_date, limit=s.page_limit)
+    logger.info("✓ Ingestion complete")
 
 def transform():
+    logger.info("STEP 3: Transformation Pipeline")
     s = Settings()
     trino = TrinoClient(s.trino_host, s.trino_port, s.trino_user, s.trino_catalog, s.trino_schema)
-
     watermark = WatermarkStore(trino, s.trino_schema, s.watermark_table)
     job = StationMissingMetricsJob(trino, watermark, s.trino_schema, s.raw_table, s.metrics_table)
     job.run_incremental()
+    logger.info("✓ Transformation complete")
 
 def maintain():
+    logger.info("STEP 4: Maintenance Pipeline")
     s = Settings()
     trino = TrinoClient(s.trino_host, s.trino_port, s.trino_user, s.trino_catalog, s.trino_schema)
-
     job = IcebergMaintenanceJob(trino, s.trino_schema, s.raw_table)
     job.run()
+    logger.info("✓ Maintenance complete")
 
 def main():
-    init()
-    ingest()
-    transform()
-    maintain()
+    logger.info("Starting NOAA Pipeline")
+    try:
+        init()
+        ingest()
+        transform()
+        maintain()
+        logger.info("✓ Pipeline completed successfully!")
+    except Exception as e:
+        logger.error(f"Pipeline failed: {e}", exc_info=True)
+        raise
 
 if __name__ == "__main__":
     main()
