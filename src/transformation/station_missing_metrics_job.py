@@ -17,8 +17,9 @@ class StationMissingMetricsJob:
     def run_incremental(self) -> None:
         last_ts = self.watermark.get(self.JOB_NAME)
 
-        # Find max ingestion_ts in the raw table (for watermark update)
-        max_ts_rows = self.trino.execute(f"""SELECT COALESCE(MAX(ingestion_ts), 0) FROM {self.schema}.{self.raw_table}""")
+        # Find max event_time_ms in the raw table (for watermark update)
+        # Use event_time_ms (actual event date) not ingestion_ts (ingestion time)
+        max_ts_rows = self.trino.execute(f"""SELECT COALESCE(MAX(event_time_ms), 0) FROM {self.schema}.{self.raw_table}""")
         max_ts = int(max_ts_rows[0][0]) if max_ts_rows else 0
 
         if max_ts <= last_ts:
@@ -27,11 +28,12 @@ class StationMissingMetricsJob:
 
         # Aggregate new records only
         # total_new, missing_new per station
+        # Use event_time_ms to identify new data (not ingestion_ts)
         agg_sql = f"""
         WITH new_data AS (
             SELECT station_id, value
             FROM {self.schema}.{self.raw_table}
-            WHERE ingestion_ts > {last_ts} AND ingestion_ts <= {max_ts}
+            WHERE event_time_ms > {last_ts} AND event_time_ms <= {max_ts}
         ),
         agg AS (
             SELECT
