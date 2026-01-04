@@ -75,6 +75,8 @@ docker run --rm \
 - `--network host` flag instead
 - Or find your Docker bridge IP and use that
 
+**Note on incremental processing**: The transformation step uses `event_time_ms` (actual event date) for watermarking. If you re-run the pipeline with the same date range, it will skip transformation since those event dates were already processed. To test transformation with fresh data, use a different date range or clear the watermark table.
+
 ## Step 4: Verify Results
 
 ### Check Trino UI
